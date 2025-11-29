@@ -49,11 +49,35 @@ fun MonthlyScreen(
 
     // Calculate totals
     val monthDates = (1..currentMonth.lengthOfMonth()).map { currentMonth.atDay(it) }
-    val monthData = monthDates.mapNotNull { date ->
-        calendarData[date.toString()]
+    val monthData = monthDates.map { date ->
+        val dateString = date.toString()
+        val dayData = calendarData[dateString]
+        val volume = dayData?.volume ?: settings.defaultVolume
+        val costPerUnit = dayData?.costPerUnit ?: settings.costPerVolume
+        DayData(volume, costPerUnit)
     }
     val totalVolume = monthData.sumOf { it.volume.toDouble() }.toFloat()
-    val totalCost = monthData.sumOf { it.cost.toDouble() }.toFloat()
+    val totalCost = monthData.sumOf { (it.volume * it.costPerUnit).toDouble() }.toFloat()
+
+    // Persist default values when month changes
+    LaunchedEffect(currentMonth) {
+        val monthDates = (1..currentMonth.lengthOfMonth()).map { currentMonth.atDay(it) }
+        var dataChanged = false
+        val newMap = calendarData.toMutableMap()
+        
+        monthDates.forEach { date ->
+            val dateString = date.toString()
+            if (!newMap.containsKey(dateString)) {
+                newMap[dateString] = DayData(settings.defaultVolume, settings.costPerVolume)
+                dataChanged = true
+            }
+        }
+        
+        if (dataChanged) {
+            calendarData = newMap
+            preferenceManager.saveCalendarData(newMap)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -82,15 +106,40 @@ fun MonthlyScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { currentMonth = currentMonth.minusMonths(1) }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Month")
+                val minMonth = YearMonth.now().minusMonths(2)
+                val maxMonth = YearMonth.now().plusMonths(1)
+
+                IconButton(
+                    onClick = { 
+                        if (currentMonth.isAfter(minMonth)) {
+                            currentMonth = currentMonth.minusMonths(1) 
+                        }
+                    },
+                    enabled = currentMonth.isAfter(minMonth)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack, 
+                        contentDescription = "Previous Month",
+                        tint = if (currentMonth.isAfter(minMonth)) MaterialTheme.colorScheme.onSurface else Color.Gray
+                    )
                 }
                 Text(
                     text = "${currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${currentMonth.year}",
                     style = MaterialTheme.typography.titleLarge
                 )
-                IconButton(onClick = { currentMonth = currentMonth.plusMonths(1) }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
+                IconButton(
+                    onClick = { 
+                        if (currentMonth.isBefore(maxMonth)) {
+                            currentMonth = currentMonth.plusMonths(1) 
+                        }
+                    },
+                    enabled = currentMonth.isBefore(maxMonth)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward, 
+                        contentDescription = "Next Month",
+                        tint = if (currentMonth.isBefore(maxMonth)) MaterialTheme.colorScheme.onSurface else Color.Gray
+                    )
                 }
             }
 
@@ -145,7 +194,7 @@ fun MonthlyScreen(
                         
                         // Use default if no data, but don't save yet
                         val displayVolume = dayData?.volume ?: settings.defaultVolume
-                        val displayCost = dayData?.cost ?: (displayVolume * settings.costPerVolume)
+                        val displayCostPerUnit = dayData?.costPerUnit ?: settings.costPerVolume
                         
                         val isToday = date == LocalDate.now()
 
@@ -156,7 +205,7 @@ fun MonthlyScreen(
                                 .clickable {
                                     selectedDate = date
                                     editVolume = displayVolume.toString()
-                                    editCost = displayCost.toString()
+                                    editCost = displayCostPerUnit.toString()
                                     showDialog = true
                                 },
                             colors = CardDefaults.cardColors(
@@ -169,8 +218,11 @@ fun MonthlyScreen(
                                 verticalArrangement = Arrangement.Center
                             ) {
                                 Text(text = day.toString(), fontWeight = FontWeight.Bold)
-                                Text(text = String.format("%.1f", displayVolume), style = MaterialTheme.typography.bodySmall)
-                                Text(text = "${settings.currencySymbol}${String.format("%.0f", displayCost)}", style = MaterialTheme.typography.bodySmall)
+                                val unitAbbr = if (settings.unit == "litre") "L" else "Oz"
+                                val volFormat = java.text.DecimalFormat("#.###")
+                                val costFormat = java.text.DecimalFormat("#.##")
+                                Text(text = "${volFormat.format(displayVolume)} $unitAbbr", style = MaterialTheme.typography.bodySmall)
+                                Text(text = "${settings.currencySymbol}${costFormat.format(displayCostPerUnit)}", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -192,7 +244,8 @@ fun MonthlyScreen(
                 ) {
                     Column {
                         Text("Total Volume", style = MaterialTheme.typography.labelMedium)
-                        Text(String.format("%.2f %s", totalVolume, settings.unit), style = MaterialTheme.typography.titleMedium)
+                        val volFormat = java.text.DecimalFormat("#.###")
+                        Text("${volFormat.format(totalVolume)} ${settings.unit}", style = MaterialTheme.typography.titleMedium)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Total Cost", style = MaterialTheme.typography.labelMedium)
@@ -204,18 +257,18 @@ fun MonthlyScreen(
     }
 
     if (showDialog && selectedDate != null) {
+        val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("Edit Entry: ${selectedDate}") },
+            title = { Text("Edit Entry: ${selectedDate?.format(formatter)}") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = editVolume,
                         onValueChange = { 
-                            editVolume = it
-                            // Auto-calc cost based on volume change if desired, or let user edit both
-                            val vol = it.toFloatOrNull() ?: 0f
-                            editCost = (vol * settings.costPerVolume).toString()
+                            if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*\$"))) {
+                                editVolume = it
+                            }
                         },
                         label = { Text("Volume") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -223,8 +276,12 @@ fun MonthlyScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = editCost,
-                        onValueChange = { editCost = it },
-                        label = { Text("Cost") },
+                        onValueChange = { 
+                            if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*\$"))) {
+                                editCost = it
+                            }
+                        },
+                        label = { Text("Cost per Unit") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
                 }
@@ -232,8 +289,8 @@ fun MonthlyScreen(
             confirmButton = {
                 Button(onClick = {
                     val vol = editVolume.toFloatOrNull() ?: 0f
-                    val cost = editCost.toFloatOrNull() ?: 0f
-                    val newDayData = DayData(vol, cost)
+                    val costPerUnit = editCost.toFloatOrNull() ?: 0f
+                    val newDayData = DayData(vol, costPerUnit)
                     
                     val newMap = calendarData.toMutableMap()
                     newMap[selectedDate.toString()] = newDayData

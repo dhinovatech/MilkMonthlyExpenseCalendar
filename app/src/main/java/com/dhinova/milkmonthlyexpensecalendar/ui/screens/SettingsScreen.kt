@@ -34,7 +34,46 @@ fun SettingsScreen(
     val units = listOf("litre", "ounce")
     val currencies = listOf("INR", "USD", "GBP", "EUR")
     val weekdayStarts = listOf("sunday", "monday")
-    val applyTos = listOf("Future days only", "Current Month and Future days")
+    val applyTos = listOf("Future days only", "Current Month and Future days", "Date from picked date")
+    
+    var showDatePicker by remember { mutableStateOf(false) }
+    var pickedDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = System.currentTimeMillis()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val date = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                        val minDate = java.time.YearMonth.now().minusMonths(2).atDay(1)
+                        val maxDate = java.time.YearMonth.now().plusMonths(1).atEndOfMonth()
+                        
+                        if (!date.isBefore(minDate) && !date.isAfter(maxDate)) {
+                            pickedDate = date
+                            showDatePicker = false
+                        } else {
+                            Toast.makeText(context, "Please select a date within the allowed range.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(
+                state = datePickerState
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -63,7 +102,9 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = settings.defaultVolume.toString(),
                 onValueChange = { 
-                    settings = settings.copy(defaultVolume = it.toFloatOrNull() ?: 0f) 
+                    if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*\$"))) {
+                        settings = settings.copy(defaultVolume = it.toFloatOrNull() ?: 0f)
+                    }
                 },
                 label = { Text("Default Volume") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -74,7 +115,9 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = settings.costPerVolume.toString(),
                 onValueChange = { 
-                    settings = settings.copy(costPerVolume = it.toFloatOrNull() ?: 0f) 
+                    if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*\$"))) {
+                        settings = settings.copy(costPerVolume = it.toFloatOrNull() ?: 0f)
+                    }
                 },
                 label = { Text("Cost per Unit") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -112,8 +155,23 @@ fun SettingsScreen(
                     label = "Apply Changes To",
                     options = applyTos,
                     selectedOption = settings.applyTo,
-                    onOptionSelected = { settings = settings.copy(applyTo = it) }
+                    onOptionSelected = { 
+                        settings = settings.copy(applyTo = it)
+                        if (it == "Date from picked date") {
+                            showDatePicker = true
+                        }
+                    }
                 )
+                if (settings.applyTo == "Date from picked date" && pickedDate != null) {
+                    Text(
+                        text = "Selected Date: ${pickedDate}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                    )
+                    Button(onClick = { showDatePicker = true }, modifier = Modifier.padding(start = 16.dp)) {
+                        Text("Change Date")
+                    }
+                }
             }
 
             Button(
@@ -122,8 +180,57 @@ fun SettingsScreen(
                     // Save settings logic
                     preferenceManager.saveSettings(settings)
                     
-                    // Update calendar data logic would go here if needed based on 'applyTo'
-                    // For now, we just save settings and first load flag
+                    // Update calendar data based on 'applyTo'
+                    val currentData = preferenceManager.getCalendarData().toMutableMap()
+                    val today = java.time.LocalDate.now()
+                    val firstDayOfCurrentMonth = java.time.YearMonth.now().atDay(1)
+                    
+                    // Purge data outside range: [Current Month - 2 months, Current Month + 1 month]
+                    val minDate = java.time.YearMonth.now().minusMonths(2).atDay(1)
+                    val maxDate = java.time.YearMonth.now().plusMonths(1).atEndOfMonth()
+                    
+                    val keysToRemove = currentData.keys.filter { dateString ->
+                        try {
+                            val date = java.time.LocalDate.parse(dateString)
+                            date.isBefore(minDate) || date.isAfter(maxDate)
+                        } catch (e: Exception) {
+                            true // Remove invalid keys
+                        }
+                    }
+                    keysToRemove.forEach { currentData.remove(it) }
+
+                    // Determine start date for applying changes
+                    val applyStartDate: java.time.LocalDate? = when (settings.applyTo) {
+                        "Future days only" -> today // "Future dates include current date"
+                        "Current Month and Future days" -> firstDayOfCurrentMonth
+                        "Date from picked date" -> pickedDate
+                        else -> null
+                    }
+
+                    if (applyStartDate != null) {
+                        val keysToUpdate = currentData.keys.filter { dateString ->
+                            try {
+                                val date = java.time.LocalDate.parse(dateString)
+                                !date.isBefore(applyStartDate) // Apply from this date onwards
+                            } catch (e: Exception) {
+                                false
+                            }
+                        }
+
+                        keysToUpdate.forEach { key ->
+                            val currentDayData = currentData[key]
+                            if (currentDayData != null) {
+                                // Update with new defaults
+                                currentData[key] = currentDayData.copy(
+                                    volume = settings.defaultVolume,
+                                    costPerUnit = settings.costPerVolume
+                                )
+                            }
+                        }
+                    }
+                    preferenceManager.saveCalendarData(currentData)
+
+                    // For first load, we just save settings and first load flag
                     if (isFirstLoad) {
                         preferenceManager.setFirstLoad(false)
                     }
