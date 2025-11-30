@@ -1,0 +1,11 @@
+<en-US>
+Milk Monthly Expense Calendar:
+- Track daily milk consumption & cost
+- View monthly totals & history
+- Navigate & edit records for the last 2 years
+- Support for Litre/Ounce & multiple currencies (₹, $, £, €)
+- Set default values for quick entry
+- Apply changes to future days or specific date ranges
+- Auto-purge data older than 2 years
+- Clean, user-friendly interface
+</en-US>

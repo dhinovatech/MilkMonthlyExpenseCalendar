@@ -72,6 +72,22 @@ fun MonthlyScreen(
                 dataChanged = true
             }
         }
+
+        // Purge data older than 2 years
+        val minDate = java.time.LocalDate.now().minusYears(2)
+        val keysToRemove = newMap.keys.filter { dateString ->
+            try {
+                val date = java.time.LocalDate.parse(dateString)
+                date.isBefore(minDate)
+            } catch (e: Exception) {
+                true
+            }
+        }
+        
+        if (keysToRemove.isNotEmpty()) {
+            keysToRemove.forEach { newMap.remove(it) }
+            dataChanged = true
+        }
         
         if (dataChanged) {
             calendarData = newMap
@@ -106,7 +122,7 @@ fun MonthlyScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val minMonth = YearMonth.now().minusMonths(2)
+                val minMonth = YearMonth.now().minusYears(2)
                 val maxMonth = YearMonth.now().plusMonths(1)
 
                 IconButton(

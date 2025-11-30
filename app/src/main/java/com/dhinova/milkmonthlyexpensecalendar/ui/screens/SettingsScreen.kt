@@ -49,14 +49,14 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { millis ->
                         val date = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                        val minDate = java.time.YearMonth.now().minusMonths(2).atDay(1)
+                        val minDate = java.time.YearMonth.now().minusYears(2).atDay(1)
                         val maxDate = java.time.YearMonth.now().plusMonths(1).atEndOfMonth()
                         
                         if (!date.isBefore(minDate) && !date.isAfter(maxDate)) {
                             pickedDate = date
                             showDatePicker = false
                         } else {
-                            Toast.makeText(context, "Please select a date within the allowed range.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Please select a date within the last 2 years.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }) {
@@ -186,7 +186,7 @@ fun SettingsScreen(
                     val firstDayOfCurrentMonth = java.time.YearMonth.now().atDay(1)
                     
                     // Purge data outside range: [Current Month - 2 months, Current Month + 1 month]
-                    val minDate = java.time.YearMonth.now().minusMonths(2).atDay(1)
+                    val minDate = java.time.YearMonth.now().minusYears(2).atDay(1)
                     val maxDate = java.time.YearMonth.now().plusMonths(1).atEndOfMonth()
                     
                     val keysToRemove = currentData.keys.filter { dateString ->
