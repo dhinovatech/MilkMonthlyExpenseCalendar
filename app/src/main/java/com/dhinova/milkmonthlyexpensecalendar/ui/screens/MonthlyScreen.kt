@@ -289,6 +289,9 @@ fun MonthlyScreen(
                         label = { Text("Volume") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
+                    TextButton(onClick = { editVolume = "0" }) {
+                        Text("Make Volume Zero")
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = editCost,

@@ -26,7 +26,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    var settings by remember { mutableStateOf(preferenceManager.getSettings()) }
+    var settings by remember { mutableStateOf(preferenceManager.getSettings().copy(applyTo = "Future days only")) }
     var isFirstLoad by remember { mutableStateOf(preferenceManager.isFirstLoad()) }
     var isLoading by remember { mutableStateOf(false) }
 
